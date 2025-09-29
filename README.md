@@ -1,59 +1,153 @@
 
-Loan Default Prediction 🚀
+# Loan Default Prediction Script (Fixed Version with Preprocessing)
 
-A machine learning project to predict loan defaults using Logistic Regression and Random Forest, with a complete preprocessing and evaluation pipeline.
+# ================================
+# 1. Imports
+# ================================
+import pandas as pd
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-📌 Project Overview
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-This project builds and compares classification models to predict whether a loan applicant will default. It demonstrates end-to-end ML workflow, from data preprocessing to model training, hyperparameter tuning, and evaluation.
+# ================================
+# 2. Load datasets
+# ================================
+df1 = pd.read_csv("C:/Users/iamsu/OneDrive/Desktop/train.csv")
+df2 = pd.read_csv("C:/Users/iamsu/OneDrive/Desktop/Test.csv")
 
-⚙️ Key Features
+# Clean column names (lowercase + strip spaces)
+df1.columns = df1.columns.str.strip().str.lower()
+df2.columns = df2.columns.str.strip().str.lower()
 
-Data Preprocessing:
+# Use training data
+df = df1.copy()
 
-Cleaned and standardized datasets.
+# Drop missing values (consider imputation for better results)
+df = df.dropna()
 
-Encoded categorical features with OneHotEncoder and scaled numerical variables with StandardScaler using ColumnTransformer.
+# Ensure output folder exists
+os.makedirs("outputs", exist_ok=True)
 
-Model Development:
+# ================================
+# 3. Target column
+# ================================
+target_col = "default"
+print(f"✅ Using target column: {target_col}")
 
-Implemented Logistic Regression and Random Forest classifiers.
+# ================================
+# 4. Features & Target split
+# ================================
+X = df.drop(columns=[target_col, "loanid"], errors="ignore")
+y = df[target_col]
 
-Applied GridSearchCV for hyperparameter tuning.
+# Auto-detect categorical and numerical columns
+categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
+numerical_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
 
-Model Evaluation:
+print(f"🔍 Detected {len(categorical_cols)} categorical columns: {categorical_cols}")
+print(f"🔍 Detected {len(numerical_cols)} numerical columns: {numerical_cols}")
 
-Measured Accuracy, F1-score, ROC-AUC, and generated confusion matrices.
+# ================================
+# 5. Train/Test Split
+# ================================
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
 
-Visualized results using Matplotlib and Seaborn.
+# Create preprocessor: Encode categoricals + Scale numericals
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numerical_cols),
+        ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_cols)
+    ],
+    remainder='passthrough'  # Keep any unexpected columns (if any)
+)
 
-Deployment-Ready Pipeline:
+# Fit preprocessor on train and transform
+X_train_processed = preprocessor.fit_transform(X_train)
+X_test_processed = preprocessor.transform(X_test)
 
-Trained models consistently on train/test sets.
+print(f"✅ Preprocessing complete. Train shape: {X_train_processed.shape}, Test shape: {X_test_processed.shape}")
 
-Automated predictions on unseen test data and exported results.
+# ================================
+# 6. Model Training
+# ================================
+# Logistic Regression (on preprocessed data)
+log_reg = LogisticRegression(max_iter=1000)
+log_reg.fit(X_train_processed, y_train)
+y_pred_lr = log_reg.predict(X_test_processed)
 
-🛠️ Tech Stack
+print("\n📊 Logistic Regression Results:")
+print("Accuracy:", accuracy_score(y_test, y_pred_lr))
+print(classification_report(y_test, y_pred_lr))
 
-Languages & Libraries: Python, Pandas, NumPy, Scikit-learn, Matplotlib, Seaborn
+# Random Forest with Grid Search (on preprocessed data)
+rf = RandomForestClassifier(random_state=42)
+param_grid = {"n_estimators": [100, 200], "max_depth": [5, 10, None]}
+grid_search = GridSearchCV(rf, param_grid, cv=3, scoring="accuracy", n_jobs=-1)
+grid_search.fit(X_train_processed, y_train)  # Use processed data
 
-Methods: Classification, Feature Engineering, Hyperparameter Tuning, Model Evaluation
+best_rf = grid_search.best_estimator_
+y_pred_rf = best_rf.predict(X_test_processed)  # Use processed data
 
-📊 Results
+print("\n🌲 Random Forest Results:")
+print("Best Params:", grid_search.best_params_)
+print("Accuracy:", accuracy_score(y_test, y_pred_rf))
+print(classification_report(y_test, y_pred_rf))
 
-Improved loan default prediction accuracy by 15% over baseline.
+# ================================
+# 7. Predictions on Test.csv
+# ================================
+test_df = df2.copy()
 
-Automated prediction pipeline generated results for 5K+ loan records.
+# Ensure test has same columns as train (drop extras, add missing as NaN if needed)
+missing_cols = set(X.columns) - set(test_df.columns)
+if missing_cols:
+    print(f"⚠️ Warning: Test set missing columns: {missing_cols}. Filling with NaN.")
+    for col in missing_cols:
+        test_df[col] = np.nan
 
-🚀 How to Run
+extra_cols = set(test_df.columns) - set(X.columns) - {'loanid'}
+if extra_cols:
+    print(f"⚠️ Warning: Test set has extra columns: {extra_cols}. Dropping them.")
+    test_df = test_df.drop(columns=extra_cols)
 
-Clone this repository.
+# Drop loanid for prediction
+X_test_final = test_df.drop(columns=["loanid"], errors="ignore")
 
-Place train.csv and test.csv in the project directory.
+# Transform test data with preprocessor (no fitting!)
+X_test_final_processed = preprocessor.transform(X_test_final)
 
-Run the script:
+# Predict using best RF model
+test_preds = best_rf.predict(X_test_final_processed)
 
-python loan_default_prediction.py
+# Save predictions
+preds_df = pd.DataFrame({
+    "loanid": test_df["loanid"],
+    "predicted_default": test_preds
+})
 
+preds_df.to_csv("outputs/test_predictions.csv", index=False)
+print("✅ Predictions saved to outputs/test_predictions.csv")
 
-Predictions will be saved in outputs/test_predictions.csv and confusion matrix in outputs/confusion_matrix.png.
+# ================================
+# 8. Confusion Matrix Visualization
+# ================================
+plt.figure(figsize=(6, 4))
+sns.heatmap(confusion_matrix(y_test, y_pred_rf), annot=True, fmt="d", cmap="Blues")
+plt.title("Confusion Matrix - Random Forest")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.tight_layout()
+plt.savefig("outputs/confusion_matrix.png")
+plt.close()
+
+print("📊 Confusion matrix saved to outputs/confusion_matrix.png")
