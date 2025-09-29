@@ -56,3 +56,6 @@ python loan_default_prediction.py
 
 
 Predictions will be saved in outputs/test_predictions.csv and confusion matrix in outputs/confusion_matrix.png.
+
+Suryansh Shukla
+Aspiring Data & Research Analyst
